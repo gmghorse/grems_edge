@@ -1,0 +1,70 @@
+# Grems EV Edge — Page Requirements
+
+### 1. Home (`/`)
+**Purpose:** Provide an overview of the charging infrastructure.
+
+**Include:**
+- Summary cards: total chargers, online chargers, active sessions, and energy delivered.
+- Charging activity statistics.
+- Recent system events and alerts.
+- Quick actions for common operations.
+
+### 2. Chargers (`/chargers`)
+**Purpose:** Monitor and manage registered chargers.
+
+**Include:**
+- Complete list of registered chargers.
+- Charger ID, status, power, and connector information.
+- Search and status filters.
+- Individual charger details.
+- Remote start/stop actions where supported.
+
+### 3. Sessions (`/sessions`)
+**Purpose:** Monitor and review charging sessions.
+
+**Include:**
+- Active and historical sessions.
+- Charger ID, user/RFID, start time, duration, and energy delivered.
+- Session status and transaction details.
+- Search and filters by date, charger, and status.
+- Detailed session information and errors.
+
+### 4. Access (`/access`)
+**Purpose:** Manage charging authorization.
+
+**Include:**
+- RFID cards and access tokens.
+- Add, edit, and revoke credentials.
+- Associated user and credential status.
+- Search and filtering.
+- Authorization activity.
+
+### 5. Events (`/events`)
+**Purpose:** Monitor system activity and troubleshoot issues.
+
+**Include:**
+- Chronological event log.
+- Event timestamp, charger ID, severity, and description.
+- Filters by event type, charger, and severity.
+- Charger connectivity changes, faults, and session events.
+- Event details.
+
+### 6. Settings (`/settings`)
+**Purpose:** Configure the application and its connections.
+
+**Include:**
+- Backend server URL and connection status.
+- OCPP configuration where applicable.
+- Application preferences and appearance.
+- Logging and diagnostic options.
+- Application version and update information.
+
+### General Requirements
+- Grems branding with `#32CD32` as the primary color.
+- Light and dark themes.
+- Consistent sidebar navigation.
+- Loading, empty, success, and error states.
+- Confirmation dialogs for sensitive actions.
+- Real-time updates where supported by the backend.
+
+**Implementation note:** Remote charger operations, OCPP configuration, and live updates depend on backend and charger support.
