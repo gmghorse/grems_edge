@@ -1,10 +1,12 @@
-import * as React from "react"
-import { Input as InputPrimitive } from "@base-ui/react/input"
+import type { ComponentPropsWithoutRef } from "react"
+import { Input as HeadlessInput } from "@headlessui/react"
 import { cn } from "cn"
 
-function Input({ className, type, ...props }: React.ComponentProps<"input">) {
+type InputProps = ComponentPropsWithoutRef<"input"> & { invalid?: boolean }
+
+function Input({ className, type, ...props }: InputProps) {
   return (
-    <InputPrimitive
+    <HeadlessInput
       type={type}
       data-slot="input"
       className={cn(

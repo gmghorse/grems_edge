@@ -11,7 +11,7 @@ import Sessions from "@/pages/sessions.tsx";
 import Access from "@/pages/access.tsx";
 import Events from "@/pages/events.tsx";
 
-// document.documentElement.classList.add("dark");
+document.documentElement.classList.add("dark");
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <React.StrictMode>

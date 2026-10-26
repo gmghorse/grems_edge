@@ -1,4 +1,3 @@
-@import url("https://fonts.googleapis.com/css2?family=Fira+Sans:wght@400;500;600;700&display=swap");
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
@@ -12,10 +11,10 @@
 
 @theme inline {
     --font-heading: var(--font-mono);
-    --font-display: "Google Sans Flex", sans-serif;
-    --font-sans: "Fira Sans", ui-sans-serif, system-ui, sans-serif;
+    --font-display: "Google Sans Flex", ui-sans-serif, system-ui, sans-serif;
+    --font-sans: "Google Sans Flex", ui-sans-serif, system-ui, sans-serif;
     --font-mono: "JetBrains Mono Variable", monospace;
-    --font-fira: "Fira Sans", ui-sans-serif, system-ui, sans-serif;
+    --font-google-sans: "Google Sans Flex", ui-sans-serif, system-ui, sans-serif;
 
     --color-background: var(--background);
     --color-foreground: var(--foreground);
@@ -66,7 +65,7 @@
 ======================================== */
 
 :root {
-    font-family: "Fira Sans", ui-sans-serif, system-ui, sans-serif;
+    font-family: "Google Sans Flex", ui-sans-serif, system-ui, sans-serif;
     font-synthesis: none;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
