@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#101510" />
+    <title>Grems EV Edge</title>
+    <style>
+      @font-face {
+        font-family: "Google Sans Flex";
+        src: url("/fonts/google-sans-flex-latin.woff2") format("woff2-variations");
+        font-style: normal;
+        font-weight: 100 1000;
+        font-display: swap;
+      }
+      * { box-sizing: border-box; }
+      html, body { width: 100%; height: 100%; margin: 0; }
+      body {
+        display: grid;
+        place-items: center;
+        overflow: hidden;
+        color: #101510;
+        background: #32cd32;
+        font-family: "Google Sans Flex", Arial, sans-serif;
+        user-select: none;
+      }
+      .card {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+      }
+      .logo {
+        display: block;
+        width: 112px;
+        height: 112px;
+        border-radius: 24px;
+        object-fit: cover;
+      }
+      h1 { margin: 4px 0 0; font-size: 22px; font-weight: 600; letter-spacing: -.02em; }
+      p { margin: 0 0 8px; color: #164516; font-size: 10px; letter-spacing: .14em; }
+      .track { width: 72px; height: 2px; overflow: hidden; border-radius: 5px; background: #10151035; }
+      .bar { width: 40%; height: 100%; border-radius: inherit; background: #101510; animation: loading 1.25s ease-in-out infinite; }
+      @keyframes loading { from { transform: translateX(-110%); } to { transform: translateX(350%); } }
+      @media (prefers-reduced-motion: reduce) { .bar { animation: none; margin-left: 29%; } }
+    </style>
+  </head>
+  <body>
+    <main class="card" aria-label="Starting Grems EV Edge">
+      <img class="logo" src="/grems-ev-logo.png" alt="" />
+      <h1>Grems EV Edge</h1>
+      <p>CHARGING MANAGEMENT</p>
+      <div class="track" role="status" aria-label="Loading"><div class="bar"></div></div>
+    </main>
+  </body>
+</html>

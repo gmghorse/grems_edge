@@ -2,7 +2,7 @@
 
 use sea_orm::entity::prelude::*;
 
-#[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
 #[sea_orm(table_name = "chargers")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false, column_type = "Text")]
@@ -28,6 +28,13 @@ pub struct Model {
     pub stop_latency_ms: i64,
     #[sea_orm(column_type = "Text")]
     pub updated_at: String,
+    #[sea_orm(column_type = "Text")]
+    pub name: String,
+    pub connector_count: i64,
+    #[sea_orm(column_type = "Text")]
+    pub connector_types: String,
+    #[sea_orm(column_type = "Double", nullable)]
+    pub power: Option<f64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

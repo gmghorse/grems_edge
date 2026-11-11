@@ -1,0 +1,30 @@
+export type Session = {
+  id: string;
+  charger: string;
+  connector_id: string;
+  connector_number?: number;
+  user: string;
+  origin: string;
+  hold_id: string;
+  command_id: string;
+  billable: boolean;
+  ocpp_transaction_id: string;
+  tariff_id: string;
+  rate_snapshot_minor_per_kwh: number;
+  start_time: string;
+  end_time: string;
+  meter_start_wh: number
+  currency: string;
+  last_energy_wh: number;
+  last_power_w: number;
+  last_reading_at: string;
+  time: string;
+  duration: string;
+  energy: string;
+  power: string;
+  cost: string;
+  cost_value?: number | null;
+  status: string;
+  stop_reason: string;
+  overshoot_wh: number;
+};

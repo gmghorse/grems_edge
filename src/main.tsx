@@ -11,7 +11,8 @@ import Sessions from "@/pages/sessions.tsx";
 import Access from "@/pages/access.tsx";
 import Events from "@/pages/events.tsx";
 
-document.documentElement.classList.add("dark");
+const savedTheme = localStorage.getItem("grems-edge-theme");
+document.documentElement.classList.toggle("dark", savedTheme ? savedTheme === "dark" : true);
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <React.StrictMode>
