@@ -1,0 +1,2 @@
+# SQLite database and its write-ahead log sidecar files are runtime data.
+grems_edge.db*
