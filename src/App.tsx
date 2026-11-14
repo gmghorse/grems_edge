@@ -1,3 +1,4 @@
+import React from "react";
 import { NavLink, Outlet, useLocation } from "react-router";
 import { useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";

@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { Charger } from "@/types/charger";
+import { invoke } from "@tauri-apps/api/core";
 
 type ChargerStore = {
   chargers: Charger[];
@@ -14,12 +15,13 @@ export const useChargerStore = create<ChargerStore>((set) => ({
   setChargers: (chargers) => set({ chargers }),
   addCharger: (charger) =>
     set((state) => ({ chargers: [...state.chargers, charger] })),
-  updateCharger: (id, updates) =>
+  updateCharger: async (id, updates) => {
     set((state) => ({
       chargers: state.chargers.map((charger) =>
         charger.id === id ? { ...charger, ...updates } : charger,
       ),
-    })),
+    }));
+  },
   removeCharger: (id) =>
     set((state) => ({
       chargers: state.chargers.filter((charger) => charger.id !== id),

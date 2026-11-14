@@ -5,7 +5,10 @@ import {
   PlusIcon,
   SlidersHorizontalIcon,
   PlugsConnectedIcon,
+  EyeIcon,
+  EyeSlashIcon,
 } from "@phosphor-icons/react";
+import { Loader2 } from "lucide-react";
 import { Fieldset, Input } from "@headlessui/react";
 import { MetricCard, PageHeader, SectionTitle } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -16,6 +19,7 @@ import type { Connector } from "@/types/connector";
 import { useChargerStore } from "@/store/charger-store";
 import { useChargerModelStore } from "@/store/charger-model-store";
 import { Spinner } from "@/components/ui/spinner";
+import { delay } from "@/lib/utils";
 import {
   Drawer,
   DrawerClose,
@@ -51,7 +55,8 @@ const connectorTypeGroup = (type: string): "AC" | "DC" =>
     : "AC";
 
 const formatConnection = (value?: string): string => {
-  if (!value || value === "Not yet connected") return value ?? "Not yet connected";
+  if (!value || value === "Not yet connected")
+    return value ?? "Not yet connected";
   const rawTimestamp = value.startsWith("Last seen ")
     ? value.slice("Last seen ".length)
     : value;
@@ -71,7 +76,7 @@ const stateClass: Record<string, string> = {
 };
 type ChargerDraft = Pick<
   Charger,
-  "name" | "location" | "faultAlerts" | "qrCodes"
+  "name" | "location" | "faultAlerts" | "qrCodes" | "auth_password_hash"
 > & {
   connectorTypes: Record<number, string[]>;
   qrCodes: Record<number, string>;
@@ -81,12 +86,14 @@ export default function Chargers() {
   const addChargerToStore = useChargerStore((state) => state.addCharger);
   const updateCharger = useChargerStore((state) => state.updateCharger);
   const chargerModels = useChargerModelStore((state) => state.models);
+  const [showPassword, setShowPassword] = useState(false);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("All");
   const [selectedCharger, setSelectedCharger] = useState<Charger | null>(null);
   const [draft, setDraft] = useState<ChargerDraft | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [isAddingCharger, setIsAddingCharger] = useState(false);
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [connectOpen, setConnectOpen] = useState(false);
   const [connectChargerIdentity, setConnectChargerIdentity] = useState("");
   const [usePasswordAuth, setUsePasswordAuth] = useState(false);
@@ -132,6 +139,7 @@ export default function Chargers() {
       location: charger.location,
       faultAlerts: charger.faultAlerts,
       qrCodes: charger.qrCodes ?? {},
+      auth_password_hash: charger.auth_password_hash ?? "",
       connectorTypes: Object.fromEntries(
         charger.connectors.map((connector) => [
           connector.connector_number,
@@ -141,7 +149,7 @@ export default function Chargers() {
     });
   };
   const closeSettings = () => setSelectedCharger(null);
-  const saveSettings = (event: React.FormEvent<HTMLFormElement>) => {
+  const saveSettings = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!selectedCharger || !draft) return;
     if (
@@ -156,6 +164,7 @@ export default function Chargers() {
       location: draft.location,
       faultAlerts: draft.faultAlerts,
       qrCodes: draft.qrCodes,
+      auth_password_hash: draft.auth_password_hash,
       connectors: selectedCharger.connectors.map((connector) => ({
         ...connector,
         connector_type:
@@ -163,6 +172,17 @@ export default function Chargers() {
           connector.connector_type,
       })),
     });
+    setIsSavingSettings(true);
+    try {
+      await delay(1000);
+      invoke<Charger>("update_charger", {
+        charger: {
+          id: selectedCharger.id,
+          name: draft.name,
+        },
+      });
+    } catch (error) {}
+    setIsSavingSettings(false);
     closeSettings();
   };
   const nextChargerIdentity = `GR-${String(Math.max(0, ...chargers.map((charger) => Number(charger.ocpp_identity.replace(/^GR-/, ""))).filter(Number.isFinite)) + 1).padStart(3, "0")}`;
@@ -490,7 +510,9 @@ export default function Chargers() {
                     </span>
                   </td>
                   <td className="py-4 font-mono tabular-nums">{c.power}</td>
-                  <td className="py-4 text-muted-foreground">{formatConnection(c.since)}</td>
+                  <td className="py-4 text-muted-foreground">
+                    {formatConnection(c.since)}
+                  </td>
                   <td className="py-4 text-right">
                     <Button
                       variant="outline"
@@ -522,7 +544,10 @@ export default function Chargers() {
           {selectedCharger && draft && (
             <form
               className="flex h-full min-h-0 flex-col"
-              onSubmit={saveSettings}
+              onSubmit={(event) => {
+                event.preventDefault();
+                saveSettings(event);
+              }}
             >
               <DrawerHeader className="px-6 pt-7">
                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">
@@ -531,8 +556,8 @@ export default function Chargers() {
                 <DrawerTitle className="mt-2 text-xl">
                   {selectedCharger.name}
                 </DrawerTitle>
-                <DrawerDescription>
-                  {selectedCharger.id} · {selectedCharger.model}
+                <DrawerDescription className="text-sm text-muted-foreground">
+                  {selectedCharger.ocpp_identity} · {selectedCharger.model}
                 </DrawerDescription>
               </DrawerHeader>
               <div className="flex-1 space-y-6 overflow-y-auto px-6 py-6">
@@ -557,6 +582,35 @@ export default function Chargers() {
                         setDraft({ ...draft, location: event.target.value })
                       }
                     />
+                  </label>
+                  <label className="block text-sm font-medium">
+                    Password authentication (optional)
+                    <div className="relative mt-2">
+                      <Input
+                        type={showPassword ? "text" : "password"}
+                        className="mt-2 block w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:not-data-focus:outline-none data-focus:outline-2 data-focus:-outline-offset-2 data-focus:outline-ring"
+                        placeholder="Add a password for OCPP authentication"
+                        value={draft.auth_password_hash ?? ""}
+                        onChange={(event) =>
+                          setDraft({
+                            ...draft,
+                            auth_password_hash: event.target.value,
+                          })
+                        }
+                      />
+
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      >
+                        {showPassword ? (
+                          <EyeSlashIcon size={18} />
+                        ) : (
+                          <EyeIcon size={18} />
+                        )}
+                      </button>
+                    </div>
                   </label>
                   <div className="space-y-3">
                     <div>
@@ -719,12 +773,19 @@ export default function Chargers() {
                 </DrawerClose>
                 <Button
                   type="submit"
-                  disabled={selectedCharger.connectors.some(
-                    (connector) =>
-                      !draft.connectorTypes[connector.connector_number]?.length,
-                  )}
+                  disabled={
+                    isSavingSettings ||
+                    selectedCharger.connectors.some(
+                      (connector) =>
+                        !draft.connectorTypes[connector.connector_number]
+                          ?.length,
+                    )
+                  }
                 >
-                  Save settings
+                  {isSavingSettings && (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  )}
+                  {isSavingSettings ? "Saving..." : "Save settings"}
                 </Button>
               </DrawerFooter>
             </form>

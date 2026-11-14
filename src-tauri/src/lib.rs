@@ -47,8 +47,9 @@ pub fn run() {
             greet,
             app_ready,
             server::commands::charger::create_charger,
+            server::commands::charger::update_charger,
             server::commands::charger::load_chargers,
-            server::commands::charger::load_sessions
+            server::commands::session::load_sessions
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
