@@ -12,7 +12,7 @@ body {
 /* Keep scrollbars quiet and consistent across the whole app. */
 * {
     scrollbar-width: thin;
-    scrollbar-color: color-mix(in oklch, var(--primary) 28%, var(--muted-foreground)) transparent;
+    scrollbar-color: var(--muted-foreground) transparent;
 }
 
 *::-webkit-scrollbar {
@@ -25,7 +25,8 @@ body {
 }
 
 *::-webkit-scrollbar-thumb {
-    background-color: color-mix(in oklch, var(--primary) 28%, var(--muted-foreground));
+    background-color: var(--muted-foreground);
+    opacity: 0.55;
     border: 2px solid transparent;
     background-clip: padding-box;
     border-radius: 9999px;
@@ -33,6 +34,7 @@ body {
 
 *::-webkit-scrollbar-thumb:hover {
     background-color: var(--primary);
+    opacity: 1;
 }
 
 /* ========================================
