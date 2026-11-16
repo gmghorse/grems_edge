@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import React from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   ChargingStationIcon,
@@ -98,22 +99,14 @@ export default function Chargers() {
   const [connectChargerIdentity, setConnectChargerIdentity] = useState("");
   const [usePasswordAuth, setUsePasswordAuth] = useState(false);
   const [newName, setNewName] = useState("");
-  const [newSerialNumber, setNewSerialNumber] = useState("");
   const [newModel, setNewModel] = useState("GREMS AC");
-  const [newConnectorCount, setNewConnectorCount] = useState("2");
-  const [newConnectorTypes, setNewConnectorTypes] = useState<
-    Record<number, string[]>
-  >({ 1: ["Type 2"], 2: ["Type 2"] });
+
+  const [newConnectorTypes, setNewConnectorTypes] = useState<string[]>([
+    "Type 2",
+  ]);
   const [connectorTypeNotices, setConnectorTypeNotices] = useState<
     Record<string, string>
   >({});
-  const parsedConnectorCount = Number(newConnectorCount);
-  const newConnectorIds =
-    Number.isInteger(parsedConnectorCount) &&
-    parsedConnectorCount >= 1 &&
-    parsedConnectorCount <= 64
-      ? Array.from({ length: parsedConnectorCount }, (_, index) => index + 1)
-      : [];
   const visible = useMemo(
     () =>
       chargers.filter(
@@ -179,6 +172,7 @@ export default function Chargers() {
         charger: {
           id: selectedCharger.id,
           name: draft.name,
+          location: draft.location,
         },
       });
     } catch (error) {}
@@ -189,21 +183,9 @@ export default function Chargers() {
   const addCharger = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const name = newName.trim();
-    const serialNumber = newSerialNumber.trim();
-    if (!name || !serialNumber) return;
-    const connectorCount = Number(newConnectorCount);
-    if (
-      !Number.isInteger(connectorCount) ||
-      connectorCount < 1 ||
-      connectorCount > 64
-    )
-      return;
-    const chargerConnectorIds = Array.from(
-      { length: connectorCount },
-      (_, index) => index + 1,
-    );
-    if (chargerConnectorIds.some((id) => !newConnectorTypes[id]?.length))
-      return;
+    if (!name) return;
+    if (!newConnectorTypes.length) return;
+    const chargerConnectorIds = newConnectorTypes.map((_, index) => index + 1);
     let charger: Charger;
     setIsAddingCharger(true);
     const spinnerDelay = new Promise((resolve) => setTimeout(resolve, 450));
@@ -217,7 +199,7 @@ export default function Chargers() {
         charger: {
           id: "",
           ocpp_identity: nextChargerIdentity,
-          serial_number: serialNumber,
+          serial_number: "",
           vendor: "GREMS",
           model: newModel.trim() || null,
           firmware_version: null,
@@ -231,7 +213,7 @@ export default function Chargers() {
           name,
           connector_count: chargerConnectorIds.length,
           connector_types: JSON.stringify(
-            chargerConnectorIds.map((n) => newConnectorTypes[n] ?? ["Type 2"]),
+            newConnectorTypes.map((type) => [type]),
           ),
           power: null,
         },
@@ -240,9 +222,7 @@ export default function Chargers() {
           // The backend assigns the generated charger ID before inserting.
           charger_id: "",
           connector_number: number,
-          connector_type: JSON.stringify(
-            newConnectorTypes[number] ?? ["Type 2"],
-          ),
+          connector_type: JSON.stringify([newConnectorTypes[number - 1]]),
           power_kw: 0,
           allowed_power_kw: newModel.includes("DC") ? 60 : 22,
           status: "Disconnected",
@@ -289,10 +269,10 @@ export default function Chargers() {
             <Button
               onClick={() => {
                 setNewName("");
-                setNewSerialNumber("");
+
                 setNewModel("GREMS AC");
-                setNewConnectorCount("2");
-                setNewConnectorTypes({ 1: ["Type 2"], 2: ["Type 2"] });
+                setNewConnectorTypes(["Type 2"]);
+                // setNewConnectorTypes({ 1: ["Type 2"], 2: ["Type 2"] });
                 setAddOpen(true);
               }}
             >
@@ -821,15 +801,15 @@ export default function Chargers() {
                     <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[11px] font-semibold text-primary">
                       2
                     </span>
-                    Set how many connectors the charger has; IDs are assigned
-                    automatically.
+                    Select the connector types it supports; connector IDs are
+                    assigned automatically.
                   </li>
                   <li className="flex gap-2.5">
                     <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[11px] font-semibold text-primary">
                       3
                     </span>
-                    Choose each connector’s supported types. Use AC types or DC
-                    types per connector.
+                    Choose the connector types this charger supports. Each
+                    selected type is added as a connector.
                   </li>
                   <li className="flex gap-2.5">
                     <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[11px] font-semibold text-primary">
@@ -853,7 +833,6 @@ export default function Chargers() {
                     autoFocus
                     required
                     className="mt-2 block w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:not-data-focus:outline-none data-focus:outline-2 data-focus:-outline-offset-2 data-focus:outline-ring"
-                    placeholder="e.g. West parking bay"
                     value={newName}
                     onChange={(event) => setNewName(event.target.value)}
                   />
@@ -866,137 +845,27 @@ export default function Chargers() {
                     value={nextChargerIdentity}
                   />
                 </label>
-                <label className="block text-sm font-medium">
-                  Serial number
-                  <Input
-                    required
-                    className="mt-2 block w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:not-data-focus:outline-none data-focus:outline-2 data-focus:-outline-offset-2 data-focus:outline-ring"
-                    placeholder="Enter the manufacturer serial number"
-                    value={newSerialNumber}
-                    onChange={(event) => setNewSerialNumber(event.target.value)}
-                  />
-                </label>
-                <label className="block text-sm font-medium">
-                  Charger model
-                  <select
-                    required
-                    className="mt-2 block h-10 w-full rounded-lg border border-input bg-background px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-                    value={newModel}
-                    onChange={(event) => setNewModel(event.target.value)}
-                  >
-                    {chargerModels.map((model) => (
-                      <option key={model} value={model}>
-                        {model}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="block text-sm font-medium">
-                  Number of connectors
-                  <Input
-                    type="number"
-                    min="1"
-                    max="64"
-                    className="mt-2 block w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground accent-foreground focus:not-data-focus:outline-none data-focus:outline-2 data-focus:-outline-offset-2 data-focus:outline-ring"
-                    required
-                    value={newConnectorCount}
-                    onChange={(event) => {
-                      const count = event.target.value;
-                      setNewConnectorCount(count);
-                      const numericCount = Number(count);
-                      if (
-                        Number.isInteger(numericCount) &&
-                        numericCount >= 1 &&
-                        numericCount <= 64
-                      )
-                        setNewConnectorTypes((current) =>
-                          Object.fromEntries(
-                            Array.from({ length: numericCount }, (_, index) => {
-                              const id = index + 1;
-                              return [id, current[id] ?? ["Type 2"]];
-                            }),
-                          ),
-                        );
-                    }}
-                  />
-                  <span className="mt-1 block text-xs text-muted-foreground">
-                    Connector IDs will be assigned automatically from 1 to{" "}
-                    {newConnectorIds.length || "—"}.
-                  </span>
-                </label>
                 <div className="space-y-3">
-                  <p className="text-sm font-medium">
-                    Supported types per connector
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Select multiple AC types or multiple DC types for each
-                    connector.
-                  </p>
-                  {newConnectorIds.map((connectorId) => (
-                    <div key={connectorId} className="rounded-lg border p-3">
-                      <p className="text-sm font-medium">
-                        Connector ID {connectorId}
-                      </p>
-                      <div className="mt-2 grid grid-cols-2 gap-2">
-                        {connectorTypes.map((type) => {
-                          const selectedTypes =
-                            newConnectorTypes[connectorId] ?? [];
-                          const checked = selectedTypes.includes(type);
-                          const otherGroupSelected = selectedTypes.some(
-                            (value) =>
-                              connectorTypeGroup(value) !==
-                              connectorTypeGroup(type),
-                          );
-                          const noticeKey = `add-${connectorId}`;
-                          return (
-                            <label
-                              key={type}
-                              className="flex items-center gap-2 text-sm font-normal"
-                            >
-                              <Checkbox
-                                checked={checked}
-                                onCheckedChange={(isChecked) => {
-                                  if (
-                                    isChecked === true &&
-                                    otherGroupSelected
-                                  ) {
-                                    setConnectorTypeNotices((current) => ({
-                                      ...current,
-                                      [noticeKey]:
-                                        "A connector can’t support AC and DC types at the same time. Remove the selected type first.",
-                                    }));
-                                    return;
-                                  }
-                                  setConnectorTypeNotices((current) => ({
-                                    ...current,
-                                    [noticeKey]: "",
-                                  }));
-                                  setNewConnectorTypes((current) => ({
-                                    ...current,
-                                    [connectorId]:
-                                      isChecked === true
-                                        ? [...selectedTypes, type]
-                                        : selectedTypes.filter(
-                                            (value) => value !== type,
-                                          ),
-                                  }));
-                                }}
-                              />
-                              {type}
-                            </label>
-                          );
-                        })}
-                      </div>
-                      {connectorTypeNotices[`add-${connectorId}`] && (
-                        <p
-                          role="alert"
-                          className="mt-2 text-xs text-destructive"
-                        >
-                          {connectorTypeNotices[`add-${connectorId}`]}
-                        </p>
-                      )}
-                    </div>
-                  ))}
+                  <div className="grid grid-cols-2 gap-2 rounded-lg border p-3">
+                    {connectorTypes.map((type) => (
+                      <label
+                        key={type}
+                        className="flex items-center gap-2 text-sm font-normal"
+                      >
+                        <Checkbox
+                          checked={newConnectorTypes.includes(type)}
+                          onCheckedChange={(isChecked) =>
+                            setNewConnectorTypes((current) =>
+                              isChecked === true
+                                ? [...current, type]
+                                : current.filter((value) => value !== type),
+                            )
+                          }
+                        />
+                        {type}
+                      </label>
+                    ))}
+                  </div>
                 </div>
               </Fieldset>
               <p className="rounded-lg bg-muted/60 p-3 text-xs text-muted-foreground">
@@ -1010,11 +879,7 @@ export default function Chargers() {
               </DrawerClose>
               <Button
                 type="submit"
-                disabled={
-                  isAddingCharger ||
-                  !newConnectorIds.length ||
-                  newConnectorIds.some((id) => !newConnectorTypes[id]?.length)
-                }
+                disabled={isAddingCharger || !newConnectorTypes.length}
               >
                 {isAddingCharger ? (
                   <>

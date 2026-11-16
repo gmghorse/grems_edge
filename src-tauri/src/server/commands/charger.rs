@@ -11,7 +11,6 @@ pub struct Charger {
     #[serde(default)]
     pub id: String,
     pub ocpp_identity: String,
-    pub serial_number: String,
     pub vendor: Option<String>,
     pub model: Option<String>,
     pub firmware_version: Option<String>,
@@ -31,7 +30,6 @@ pub struct Charger {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ChargerUpdate {
     pub id: String,
-    pub serial_number: Option<String>,
     pub vendor: Option<String>,
     pub model: Option<String>,
     pub auth_password_hash: Option<String>,
@@ -45,7 +43,6 @@ impl From<charger_entity::Model> for Charger {
         Self {
             id: m.id,
             ocpp_identity: m.ocpp_identity,
-            serial_number: m.serial_number,
             vendor: m.vendor,
             model: m.model,
             firmware_version: m.firmware_version,
@@ -68,7 +65,6 @@ impl From<charger_entity::Model> for ChargerUpdate {
     fn from(m: charger_entity::Model) -> Self {
         Self {
             id: m.id,
-            serial_number: Option::from(m.serial_number),
             vendor: Option::from(m.vendor),
             model: Option::from(m.model),
             auth_password_hash: Option::from(m.auth_password_hash),
@@ -131,7 +127,6 @@ pub async fn create_charger(
     let new_charger = charger_entity::ActiveModel {
         id: Set(Uuid::now_v7().to_string()),
         ocpp_identity: Set(charger.ocpp_identity),
-        serial_number: Set(charger.serial_number),
         vendor: Set(charger.vendor),
         model: Set(charger.model),
         firmware_version: Set(charger.firmware_version),
@@ -146,6 +141,7 @@ pub async fn create_charger(
         connector_count: Set(charger.connector_count),
         connector_types: Set(charger.connector_types),
         power: Set(charger.power),
+        ..Default::default()
     };
     let inserted = new_charger
         .insert(&state.db)
@@ -169,7 +165,7 @@ pub async fn update_charger(
         .one(&state.db)
         .await
         .map_err(|e| e.to_string())?
-        .ok_or_else(|| "Charger not found".to_string())?;
+        .ok_or_else(|| "Charger not found at all".to_string())?;
 
     let mut active: charger_entity::ActiveModel = model.into();
 
