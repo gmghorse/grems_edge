@@ -1,6 +1,9 @@
 use super::protocol::handle_text_message;
 use crate::entities::chargers;
-use actix_web::{http::header::SEC_WEBSOCKET_PROTOCOL, web, App, Error, HttpRequest, HttpServer};
+use actix_web::{
+    http::header::{AUTHORIZATION, SEC_WEBSOCKET_PROTOCOL},
+    web, App, Error, HttpRequest, HttpServer,
+};
 use actix_ws::Message;
 use chrono::Utc;
 use futures_util::StreamExt;
@@ -29,6 +32,33 @@ pub(super) async fn charger_ws(
     if charger.is_active != 1 {
         return Ok(actix_web::HttpResponse::Forbidden().finish());
     }
+    if let Some(password_hash) = charger.auth_password_hash.as_deref() {
+        use argon2::{password_hash::PasswordHash, Argon2, PasswordVerifier};
+        use base64::{engine::general_purpose::STANDARD, Engine as _};
+
+        let valid_credentials = req
+            .headers()
+            .get(AUTHORIZATION)
+            .and_then(|header| header.to_str().ok())
+            .and_then(|header| {
+                let (scheme, encoded) = header.split_once(' ')?;
+                scheme.eq_ignore_ascii_case("Basic").then_some(encoded)
+            })
+            .and_then(|encoded| STANDARD.decode(encoded).ok())
+            .and_then(|decoded| String::from_utf8(decoded).ok())
+            .and_then(|credentials| {
+                let (username, password) = credentials.split_once(':')?;
+                if username != charger.ocpp_identity.as_str() {
+                    return None;
+                }
+                let parsed_hash = PasswordHash::new(password_hash).ok()?;
+                Some(Argon2::default().verify_password(password.as_bytes(), &parsed_hash).is_ok())
+            })
+            .unwrap_or(false);
+        if !valid_credentials {
+            return Ok(actix_web::HttpResponse::Unauthorized().finish());
+        }
+    }
     let supports_ocpp_16 = req.headers().get_all(SEC_WEBSOCKET_PROTOCOL).any(|header| {
         header.to_str().ok().is_some_and(|value| {
             value
@@ -44,11 +74,18 @@ pub(super) async fn charger_ws(
     let (response, mut session, mut stream) =
         actix_ws::handle_with_protocols(&req, body, &["ocpp1.6"])?;
     actix_web::rt::spawn(async move {
+        let mut boot_accepted = false;
         while let Some(Ok(message)) = stream.next().await {
             match message {
                 Message::Text(text) => {
-                    if let Some(reply) =
-                        handle_text_message(&text, &charger_id, db.get_ref(), app.get_ref()).await
+                    if let Some(reply) = handle_text_message(
+                        &text,
+                        &charger_id,
+                        db.get_ref(),
+                        app.get_ref(),
+                        &mut boot_accepted,
+                    )
+                    .await
                     {
                         if session.text(reply).await.is_err() {
                             break;

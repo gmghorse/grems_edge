@@ -38,6 +38,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { nextTuesday } from "date-fns";
 
 const connectorTypes = [
   "Type 2",
@@ -75,10 +76,8 @@ const stateClass: Record<string, string> = {
   Faulted: "bg-orange-500/10 text-orange-600",
   Disconnected: "bg-orange-500/10 text-orange-600",
 };
-type ChargerDraft = Pick<
-  Charger,
-  "name" | "location" | "faultAlerts" | "qrCodes" | "auth_password_hash"
-> & {
+type ChargerDraft = Pick<Charger, "name" | "location" | "faultAlerts"> & {
+  auth_password: string;
   connectorTypes: Record<number, string[]>;
   qrCodes: Record<number, string>;
 };
@@ -99,11 +98,7 @@ export default function Chargers() {
   const [connectChargerIdentity, setConnectChargerIdentity] = useState("");
   const [usePasswordAuth, setUsePasswordAuth] = useState(false);
   const [newName, setNewName] = useState("");
-  const [newModel, setNewModel] = useState("GREMS AC");
-
-  const [newConnectorTypes, setNewConnectorTypes] = useState<string[]>([
-    "Type 2",
-  ]);
+  const [newPassword, setNewPassword] = useState("");
   const [connectorTypeNotices, setConnectorTypeNotices] = useState<
     Record<string, string>
   >({});
@@ -132,7 +127,7 @@ export default function Chargers() {
       location: charger.location,
       faultAlerts: charger.faultAlerts,
       qrCodes: charger.qrCodes ?? {},
-      auth_password_hash: charger.auth_password_hash ?? "",
+      auth_password: "",
       connectorTypes: Object.fromEntries(
         charger.connectors.map((connector) => [
           connector.connector_number,
@@ -157,7 +152,6 @@ export default function Chargers() {
       location: draft.location,
       faultAlerts: draft.faultAlerts,
       qrCodes: draft.qrCodes,
-      auth_password_hash: draft.auth_password_hash,
       connectors: selectedCharger.connectors.map((connector) => ({
         ...connector,
         connector_type:
@@ -168,14 +162,33 @@ export default function Chargers() {
     setIsSavingSettings(true);
     try {
       await delay(1000);
-      invoke<Charger>("update_charger", {
+      await invoke<Charger>("update_charger", {
         charger: {
           id: selectedCharger.id,
           name: draft.name,
           location: draft.location,
+          auth_password: draft.auth_password || null,
+          fault_alerts: draft.faultAlerts,
+          qr_codes: draft.qrCodes,
+          connector_types: JSON.stringify(
+            selectedCharger.connectors.map(
+              (connector) =>
+                draft.connectorTypes[connector.connector_number] ?? [],
+            ),
+          ),
+          connectors: selectedCharger.connectors.map((connector) => ({
+            ...connector,
+            connector_type: JSON.stringify(
+              draft.connectorTypes[connector.connector_number] ?? [],
+            ),
+          })),
         },
       });
-    } catch (error) {}
+    } catch (error) {
+      window.alert(`Could not save charger settings: ${String(error)}`);
+      setIsSavingSettings(false);
+      return;
+    }
     setIsSavingSettings(false);
     closeSettings();
   };
@@ -184,59 +197,37 @@ export default function Chargers() {
     event.preventDefault();
     const name = newName.trim();
     if (!name) return;
-    if (!newConnectorTypes.length) return;
-    const chargerConnectorIds = newConnectorTypes.map((_, index) => index + 1);
     let charger: Charger;
     setIsAddingCharger(true);
-    const spinnerDelay = new Promise((resolve) => setTimeout(resolve, 450));
+
     try {
-      const [savedCharger, savedConnectors] = await invoke<
-        [
-          Charger,
-          (Omit<Connector, "connector_type"> & { connector_type: string })[],
-        ]
-      >("create_charger", {
-        charger: {
-          id: "",
-          ocpp_identity: nextChargerIdentity,
-          serial_number: "",
-          vendor: "GREMS",
-          model: newModel.trim() || null,
-          firmware_version: null,
-          auth_password_hash: null,
-          is_active: 1,
-          is_online: 0,
-          last_heartbeat_at: null,
-          last_boot_at: null,
-          stop_latency_ms: 3000,
-          updated_at: new Date().toISOString(),
-          name,
-          connector_count: chargerConnectorIds.length,
-          connector_types: JSON.stringify(
-            newConnectorTypes.map((type) => [type]),
-          ),
-          power: null,
-        },
-        connectors: chargerConnectorIds.map((number) => ({
-          id: "",
-          // The backend assigns the generated charger ID before inserting.
-          charger_id: "",
-          connector_number: number,
-          connector_type: JSON.stringify([newConnectorTypes[number - 1]]),
-          power_kw: 0,
-          allowed_power_kw: newModel.includes("DC") ? 60 : 22,
-          status: "Disconnected",
-          error_code: null,
-          status_updated_at: null,
-        })),
-      });
-      await spinnerDelay;
+      const [savedCharger] = await Promise.all([
+        invoke<Charger>("create_charger", {
+          charger: {
+            id: "",
+            ocpp_identity: nextChargerIdentity,
+            serial_number: "",
+            vendor: null,
+            model: null,
+            firmware_version: null,
+            auth_password: newPassword || null,
+            is_active: 1,
+            is_online: 0,
+            last_heartbeat_at: null,
+            last_boot_at: null,
+            stop_latency_ms: 3000,
+            updated_at: new Date().toISOString(),
+            name,
+            connector_count: 0,
+            connector_types: "[]",
+            power: null,
+          },
+        }),
+        new Promise((resolve) => setTimeout(resolve, 450)),
+      ]);
       charger = {
         ...savedCharger,
-        connectors: savedConnectors.map((connector) => ({
-          ...connector,
-          connector_type: JSON.parse(connector.connector_type) as string[],
-        })),
+        connectors: [],
         status: "Disconnected",
         power: null,
         since: "Not yet connected",
@@ -254,6 +245,7 @@ export default function Chargers() {
     setQuery("");
     setAddOpen(false);
     setNewName("");
+    setNewPassword("");
   };
   return (
     <main className="mx-auto w-full max-w-6xl space-y-7 p-4 sm:p-6 lg:p-8">
@@ -270,13 +262,11 @@ export default function Chargers() {
               onClick={() => {
                 setNewName("");
 
-                setNewModel("GREMS AC");
-                setNewConnectorTypes(["Type 2"]);
-                // setNewConnectorTypes({ 1: ["Type 2"], 2: ["Type 2"] });
                 setAddOpen(true);
               }}
             >
-              <PlusIcon /> Add charger
+              {/* <PlusIcon /> */}
+              Add charger
             </Button>
           </div>
         }
@@ -537,242 +527,295 @@ export default function Chargers() {
                   {selectedCharger.name}
                 </DrawerTitle>
                 <DrawerDescription className="text-sm text-muted-foreground">
-                  {selectedCharger.ocpp_identity} · {selectedCharger.model}
+                  {selectedCharger.ocpp_identity}
                 </DrawerDescription>
               </DrawerHeader>
-              <div className="flex-1 space-y-6 overflow-y-auto px-6 py-6">
-                <Fieldset className="space-y-4">
-                  <label className="block text-sm font-medium">
-                    Charger name
-                    <Input
-                      className="mt-2 block w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:not-data-focus:outline-none data-focus:outline-2 data-focus:-outline-offset-2 data-focus:outline-ring"
-                      value={draft.name}
-                      onChange={(event) =>
-                        setDraft({ ...draft, name: event.target.value })
-                      }
-                    />
-                  </label>
-                  <label className="block text-sm font-medium">
-                    Location
-                    <Input
-                      className="mt-2 block w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:not-data-focus:outline-none data-focus:outline-2 data-focus:-outline-offset-2 data-focus:outline-ring"
-                      placeholder="Add a location"
-                      value={draft.location}
-                      onChange={(event) =>
-                        setDraft({ ...draft, location: event.target.value })
-                      }
-                    />
-                  </label>
-                  <label className="block text-sm font-medium">
-                    Password authentication (optional)
-                    <div className="relative mt-2">
-                      <Input
-                        type={showPassword ? "text" : "password"}
-                        className="mt-2 block w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:not-data-focus:outline-none data-focus:outline-2 data-focus:-outline-offset-2 data-focus:outline-ring"
-                        placeholder="Add a password for OCPP authentication"
-                        value={draft.auth_password_hash ?? ""}
-                        onChange={(event) =>
-                          setDraft({
-                            ...draft,
-                            auth_password_hash: event.target.value,
-                          })
-                        }
-                      />
+              {selectedCharger.last_boot_at ? (
+                <>
+                  <div className="flex-1 space-y-6 overflow-y-auto px-6 py-6">
+                    <div className="grid grid-cols-2 gap-3 rounded-xl border p-4 text-sm">
+                      <div>
+                        <p className="text-xs text-muted-foreground">
+                          Connectors
+                        </p>
+                        <p className="mt-1 font-medium">
+                          {selectedCharger.connector_count}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">
+                          Serial number
+                        </p>
+                        <p className="mt-1 font-medium">
+                          {selectedCharger.serial_number || "—"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Model</p>
+                        <p className="mt-1 font-medium">
+                          {selectedCharger.model || "—"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Vendor</p>
+                        <p className="mt-1 font-medium">
+                          {selectedCharger.vendor || "—"}
+                        </p>
+                      </div>
+                    </div>
+                    <Fieldset className="space-y-4">
+                      <label className="block text-sm font-medium">
+                        Charger name
+                        <Input
+                          className="mt-2 block w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:not-data-focus:outline-none data-focus:outline-2 data-focus:-outline-offset-2 data-focus:outline-ring"
+                          value={draft.name}
+                          onChange={(event) =>
+                            setDraft({ ...draft, name: event.target.value })
+                          }
+                        />
+                      </label>
+                      <label className="block text-sm font-medium">
+                        Location
+                        <Input
+                          className="mt-2 block w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:not-data-focus:outline-none data-focus:outline-2 data-focus:-outline-offset-2 data-focus:outline-ring"
+                          placeholder="Add a location"
+                          value={draft.location}
+                          onChange={(event) =>
+                            setDraft({ ...draft, location: event.target.value })
+                          }
+                        />
+                      </label>
+                      <label className="block text-sm font-medium">
+                        Password authentication (optional)
+                        <div className="relative mt-2">
+                          <Input
+                            type={showPassword ? "text" : "password"}
+                            className="mt-2 block w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:not-data-focus:outline-none data-focus:outline-2 data-focus:-outline-offset-2 data-focus:outline-ring"
+                            placeholder={selectedCharger ? "Leave blank to keep current password" : "Set OCPP password"}
+                            value={draft.auth_password}
+                            onChange={(event) =>
+                              setDraft({
+                                ...draft,
+                                auth_password: event.target.value,
+                              })
+                            }
+                          />
 
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword(!showPassword)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                      >
-                        {showPassword ? (
-                          <EyeSlashIcon size={18} />
-                        ) : (
-                          <EyeIcon size={18} />
-                        )}
-                      </button>
-                    </div>
-                  </label>
-                  <div className="space-y-3">
-                    <div>
-                      <p className="text-sm font-medium">Connector setup</p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Select all connector types supported directly or through
-                        adapters, then assign its QR code.
-                      </p>
-                    </div>
-                    {selectedCharger.connectors.map(
-                      ({ connector_number: connectorId }) => (
-                        <div
-                          key={connectorId}
-                          className="space-y-3 rounded-lg border p-3"
-                        >
-                          <div>
-                            <p className="text-sm font-medium">
-                              Connector {connectorId} supported types
-                            </p>
-                            <p className="mt-1 text-xs text-muted-foreground">
-                              Choose multiple AC types or multiple DC types. A
-                              connector cannot use both.
-                            </p>
-                            <div className="mt-2 grid grid-cols-2 gap-2">
-                              {connectorTypes.map((type) => {
-                                const selectedTypes =
-                                  draft.connectorTypes[connectorId] ?? [];
-                                const checked = selectedTypes.includes(type);
-                                const otherGroupSelected = selectedTypes.some(
-                                  (value) =>
-                                    connectorTypeGroup(value) !==
-                                    connectorTypeGroup(type),
-                                );
-                                const noticeKey = `settings-${selectedCharger.id}-${connectorId}`;
-                                return (
-                                  <label
-                                    key={type}
-                                    className="flex items-center gap-2 text-sm font-normal"
-                                  >
-                                    <Checkbox
-                                      checked={checked}
-                                      onCheckedChange={(isChecked) => {
-                                        if (
-                                          isChecked === true &&
-                                          otherGroupSelected
-                                        ) {
-                                          setConnectorTypeNotices(
-                                            (current) => ({
-                                              ...current,
-                                              [noticeKey]:
-                                                "A connector can’t support AC and DC types at the same time. Remove the selected type first.",
-                                            }),
-                                          );
-                                          return;
-                                        }
-                                        setConnectorTypeNotices((current) => ({
-                                          ...current,
-                                          [noticeKey]: "",
-                                        }));
-                                        setDraft({
-                                          ...draft,
-                                          connectorTypes: {
-                                            ...draft.connectorTypes,
-                                            [connectorId]:
-                                              isChecked === true
-                                                ? [...selectedTypes, type]
-                                                : selectedTypes.filter(
-                                                    (value) => value !== type,
-                                                  ),
-                                          },
-                                        });
-                                      }}
-                                    />
-                                    {type}
-                                  </label>
-                                );
-                              })}
-                            </div>
-                            {connectorTypeNotices[
-                              `settings-${selectedCharger.id}-${connectorId}`
-                            ] && (
-                              <p
-                                role="alert"
-                                className="mt-2 text-xs text-destructive"
-                              >
-                                {
-                                  connectorTypeNotices[
-                                    `settings-${selectedCharger.id}-${connectorId}`
-                                  ]
-                                }
-                              </p>
+                          <button
+                            type="button"
+                            onClick={() => setShowPassword(!showPassword)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                          >
+                            {showPassword ? (
+                              <EyeSlashIcon size={18} />
+                            ) : (
+                              <EyeIcon size={18} />
                             )}
-                          </div>
-                          <label className="block text-sm font-medium">
-                            Connector {connectorId} QR code
-                            <Input
-                              className="mt-2 block w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:not-data-focus:outline-none data-focus:outline-2 data-focus:-outline-offset-2 data-focus:outline-ring"
-                              placeholder="Scan or enter QR code value"
-                              value={draft.qrCodes[connectorId] ?? ""}
-                              onChange={(event) =>
-                                setDraft({
-                                  ...draft,
-                                  qrCodes: {
-                                    ...draft.qrCodes,
-                                    [connectorId]: event.target.value,
-                                  },
-                                })
-                              }
-                            />
-                            <span className="mt-1 block text-xs text-muted-foreground">
-                              {draft.qrCodes[connectorId]?.trim()
-                                ? "QR code assigned"
-                                : "No QR code assigned"}
-                            </span>
-                          </label>
+                          </button>
                         </div>
-                      ),
-                    )}
-                  </div>
-                </Fieldset>
-                <div className="divide-y rounded-xl border px-4">
-                  <div className="flex items-center justify-between gap-4 py-4">
-                    <div>
-                      <p className="text-sm font-medium">Fault notifications</p>
+                      </label>
+                      <div className="space-y-3">
+                        <div>
+                          <p className="text-sm font-medium">Connector setup</p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Select all connector types supported directly or
+                            through adapters, then assign its QR code.
+                          </p>
+                        </div>
+                        {selectedCharger.connectors.map(
+                          ({ connector_number: connectorId }) => (
+                            <div
+                              key={connectorId}
+                              className="space-y-3 rounded-lg border p-3"
+                            >
+                              <div>
+                                <p className="text-sm font-medium">
+                                  Connector {connectorId} supported types
+                                </p>
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                  Choose multiple AC types or multiple DC types.
+                                  A connector cannot use both.
+                                </p>
+                                <div className="mt-2 grid grid-cols-2 gap-2">
+                                  {connectorTypes.map((type) => {
+                                    const selectedTypes =
+                                      draft.connectorTypes[connectorId] ?? [];
+                                    const checked =
+                                      selectedTypes.includes(type);
+                                    const otherGroupSelected =
+                                      selectedTypes.some(
+                                        (value) =>
+                                          connectorTypeGroup(value) !==
+                                          connectorTypeGroup(type),
+                                      );
+                                    const noticeKey = `settings-${selectedCharger.id}-${connectorId}`;
+                                    return (
+                                      <label
+                                        key={type}
+                                        className="flex items-center gap-2 text-sm font-normal"
+                                      >
+                                        <Checkbox
+                                          checked={checked}
+                                          onCheckedChange={(isChecked) => {
+                                            if (
+                                              isChecked === true &&
+                                              otherGroupSelected
+                                            ) {
+                                              setConnectorTypeNotices(
+                                                (current) => ({
+                                                  ...current,
+                                                  [noticeKey]:
+                                                    "A connector can’t support AC and DC types at the same time. Remove the selected type first.",
+                                                }),
+                                              );
+                                              return;
+                                            }
+                                            setConnectorTypeNotices(
+                                              (current) => ({
+                                                ...current,
+                                                [noticeKey]: "",
+                                              }),
+                                            );
+                                            setDraft({
+                                              ...draft,
+                                              connectorTypes: {
+                                                ...draft.connectorTypes,
+                                                [connectorId]:
+                                                  isChecked === true
+                                                    ? [...selectedTypes, type]
+                                                    : selectedTypes.filter(
+                                                        (value) =>
+                                                          value !== type,
+                                                      ),
+                                              },
+                                            });
+                                          }}
+                                        />
+                                        {type}
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+                                {connectorTypeNotices[
+                                  `settings-${selectedCharger.id}-${connectorId}`
+                                ] && (
+                                  <p
+                                    role="alert"
+                                    className="mt-2 text-xs text-destructive"
+                                  >
+                                    {
+                                      connectorTypeNotices[
+                                        `settings-${selectedCharger.id}-${connectorId}`
+                                      ]
+                                    }
+                                  </p>
+                                )}
+                              </div>
+                              <label className="block text-sm font-medium">
+                                Connector {connectorId} QR code
+                                <Input
+                                  className="mt-2 block w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:not-data-focus:outline-none data-focus:outline-2 data-focus:-outline-offset-2 data-focus:outline-ring"
+                                  placeholder="Scan or enter QR code value"
+                                  value={draft.qrCodes[connectorId] ?? ""}
+                                  onChange={(event) =>
+                                    setDraft({
+                                      ...draft,
+                                      qrCodes: {
+                                        ...draft.qrCodes,
+                                        [connectorId]: event.target.value,
+                                      },
+                                    })
+                                  }
+                                />
+                                <span className="mt-1 block text-xs text-muted-foreground">
+                                  {draft.qrCodes[connectorId]?.trim()
+                                    ? "QR code assigned"
+                                    : "No QR code assigned"}
+                                </span>
+                              </label>
+                            </div>
+                          ),
+                        )}
+                      </div>
+                    </Fieldset>
+                    <div className="divide-y rounded-xl border px-4">
+                      <div className="flex items-center justify-between gap-4 py-4">
+                        <div>
+                          <p className="text-sm font-medium">
+                            Fault notifications
+                          </p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Show an alert when this charger reports a fault.
+                          </p>
+                        </div>
+                        <Switch
+                          checked={draft.faultAlerts}
+                          onCheckedChange={(faultAlerts) =>
+                            setDraft({ ...draft, faultAlerts })
+                          }
+                        />
+                      </div>
+                    </div>
+                    <div className="rounded-xl bg-muted/60 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        Current status
+                      </p>
+                      <p className="mt-2 text-sm font-medium">
+                        {selectedCharger.status}
+                      </p>
                       <p className="mt-1 text-xs text-muted-foreground">
-                        Show an alert when this charger reports a fault.
+                        {selectedCharger.since}
                       </p>
                     </div>
-                    <Switch
-                      checked={draft.faultAlerts}
-                      onCheckedChange={(faultAlerts) =>
-                        setDraft({ ...draft, faultAlerts })
-                      }
-                    />
                   </div>
-                </div>
-                <div className="rounded-xl bg-muted/60 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    Current status
-                  </p>
-                  <p className="mt-2 text-sm font-medium">
-                    {selectedCharger.status}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {selectedCharger.since}
-                  </p>
-                </div>
-              </div>
-              <DrawerFooter className="flex-row justify-end border-t px-6 py-4">
-                <DrawerClose
-                  render={
+                  <DrawerFooter className="flex-row justify-end border-t px-6 py-4">
+                    <DrawerClose
+                      render={
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={closeSettings}
+                        />
+                      }
+                    >
+                      Cancel
+                    </DrawerClose>
                     <Button
-                      type="button"
-                      variant="outline"
-                      onClick={closeSettings}
-                    />
-                  }
-                >
-                  Cancel
-                </DrawerClose>
-                <Button
-                  type="submit"
-                  disabled={
-                    isSavingSettings ||
-                    selectedCharger.connectors.some(
-                      (connector) =>
-                        !draft.connectorTypes[connector.connector_number]
-                          ?.length,
-                    )
-                  }
-                >
-                  {isSavingSettings && (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  )}
-                  {isSavingSettings ? "Saving..." : "Save settings"}
-                </Button>
-              </DrawerFooter>
+                      type="submit"
+                      disabled={
+                        isSavingSettings ||
+                        selectedCharger.connectors.some(
+                          (connector) =>
+                            !draft.connectorTypes[connector.connector_number]
+                              ?.length,
+                        )
+                      }
+                    >
+                      {isSavingSettings && (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      )}
+                      {isSavingSettings ? "Saving..." : "Save settings"}
+                    </Button>
+                  </DrawerFooter>
+                </>
+              ) : (
+                <div className="px-6 py-6 text-sm text-muted-foreground">
+                  Charger settings will appear after this charger connects to
+                  the edge.
+                </div>
+              )}
             </form>
           )}
         </DrawerContent>
       </Drawer>
-      <Drawer open={addOpen} onOpenChange={setAddOpen} swipeDirection="right">
+      <Drawer
+        open={addOpen}
+        onOpenChange={(open) => {
+          setAddOpen(open);
+          if (!open) setNewPassword("");
+        }}
+        swipeDirection="right"
+      >
         <DrawerContent className="w-[min(92vw,28rem)] border-l bg-background">
           <form className="flex h-full min-h-0 flex-col" onSubmit={addCharger}>
             <DrawerHeader className="px-6 pt-7">
@@ -795,33 +838,19 @@ export default function Chargers() {
                     <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[11px] font-semibold text-primary">
                       1
                     </span>
-                    Enter a recognizable name and the charger model.
+                    Enter a recognizable name.
                   </li>
                   <li className="flex gap-2.5">
                     <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[11px] font-semibold text-primary">
                       2
-                    </span>
-                    Select the connector types it supports; connector IDs are
-                    assigned automatically.
-                  </li>
-                  <li className="flex gap-2.5">
-                    <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[11px] font-semibold text-primary">
-                      3
-                    </span>
-                    Choose the connector types this charger supports. Each
-                    selected type is added as a connector.
-                  </li>
-                  <li className="flex gap-2.5">
-                    <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[11px] font-semibold text-primary">
-                      4
                     </span>
                     <span>
                       Select{" "}
                       <span className="font-medium text-foreground">
                         Add charger
                       </span>
-                      . It will show as disconnected until it reports to the
-                      edge server.
+                      . Its ID, connector count, and hardware details are
+                      generated or detected automatically.
                     </span>
                   </li>
                 </ol>
@@ -838,35 +867,37 @@ export default function Chargers() {
                   />
                 </label>
                 <label className="block text-sm font-medium">
-                  Charger OCPP identity
-                  <Input
-                    readOnly
-                    className="mt-2 block w-full rounded-lg border border-input bg-muted px-3 py-2 text-sm text-muted-foreground"
-                    value={nextChargerIdentity}
-                  />
-                </label>
-                <div className="space-y-3">
-                  <div className="grid grid-cols-2 gap-2 rounded-lg border p-3">
-                    {connectorTypes.map((type) => (
-                      <label
-                        key={type}
-                        className="flex items-center gap-2 text-sm font-normal"
-                      >
-                        <Checkbox
-                          checked={newConnectorTypes.includes(type)}
-                          onCheckedChange={(isChecked) =>
-                            setNewConnectorTypes((current) =>
-                              isChecked === true
-                                ? [...current, type]
-                                : current.filter((value) => value !== type),
-                            )
-                          }
-                        />
-                        {type}
-                      </label>
-                    ))}
+                  OCPP password (optional)
+                  <div className="relative mt-2">
+                    <Input
+                      type={showPassword ? "text" : "password"}
+                      autoComplete="new-password"
+                      className="block w-full rounded-lg border border-input bg-background px-3 py-2 pr-10 text-sm text-foreground placeholder:text-muted-foreground"
+                      placeholder="Set a password; it won’t be shown again"
+                      value={newPassword}
+                      onChange={(event) => setNewPassword(event.target.value)}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      aria-label={showPassword ? "Hide password" : "Show password"}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showPassword ? <EyeSlashIcon size={18} /> : <EyeIcon size={18} />}
+                    </button>
                   </div>
-                </div>
+                  <span className="mt-1 block text-xs text-muted-foreground">
+                    Copy it before adding the charger. The edge server stores only a password hash.
+                  </span>
+                </label>
+              </Fieldset>
+              <Fieldset>
+                <label>
+                  Charger ID
+                  <p className="rounded-lg bg-muted/70 p-2 mt-2 text-muted-foreground">
+                    {nextChargerIdentity}
+                  </p>
+                </label>
               </Fieldset>
               <p className="rounded-lg bg-muted/60 p-3 text-xs text-muted-foreground">
                 The charger will appear as disconnected until it reports to the
@@ -877,17 +908,15 @@ export default function Chargers() {
               <DrawerClose render={<Button type="button" variant="outline" />}>
                 Cancel
               </DrawerClose>
-              <Button
-                type="submit"
-                disabled={isAddingCharger || !newConnectorTypes.length}
-              >
+              <Button type="submit" disabled={isAddingCharger}>
                 {isAddingCharger ? (
                   <>
                     <Spinner /> Adding…
                   </>
                 ) : (
                   <>
-                    <PlusIcon /> Add charger
+                    {/* <PlusIcon />  */}
+                    Add charger
                   </>
                 )}
               </Button>

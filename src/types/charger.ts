@@ -10,7 +10,6 @@ export type Charger = {
   vendor: string | null;
   model: string | null;
   firmware_version: string | null;
-  auth_password_hash: string | null;
   is_active: number;
   is_online: number;
   last_heartbeat_at: string | null;

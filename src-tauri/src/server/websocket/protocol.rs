@@ -14,6 +14,7 @@ pub(super) async fn handle_text_message(
     charger_id: &str,
     db: &DatabaseConnection,
     app: &AppHandle,
+    boot_accepted: &mut bool,
 ) -> Option<String> {
     let frame: Value = match serde_json::from_str(text) {
         Ok(frame) => frame,
@@ -41,6 +42,14 @@ pub(super) async fn handle_text_message(
             json!({}),
         ));
     }
+    if !*boot_accepted && action != "BootNotification" {
+        return Some(call_error(
+            message_id,
+            "FormationViolation",
+            "BootNotification must be the first OCPP request after connecting",
+            json!({}),
+        ));
+    }
     log_message(
         db,
         charger_id,
@@ -61,7 +70,12 @@ pub(super) async fn handle_text_message(
             | "StatusNotification"
             | "StopTransaction"
     );
-    if result.is_ok() && changes_live_state {
+    let accepted_boot = action != "BootNotification"
+        || result
+            .as_ref()
+            .map(|response| response["status"] == "Accepted")
+            .unwrap_or(false);
+    if result.is_ok() && changes_live_state && accepted_boot {
         let session_update = if action == "MeterValues" {
             live_meter_update(db, &payload).await
         } else {
@@ -78,6 +92,17 @@ pub(super) async fn handle_text_message(
         Ok(response) => json!([3, message_id, response]).to_string(),
         Err((code, description, details)) => call_error(message_id, &code, &description, details),
     };
+    if action == "BootNotification"
+        && serde_json::from_str::<Value>(&reply)
+            .ok()
+            .is_some_and(|frame| {
+                frame
+                    .get(2)
+                    .is_some_and(|payload| payload["status"] == "Accepted")
+            })
+    {
+        *boot_accepted = true;
+    }
     if let Ok(reply_frame) = serde_json::from_str::<Value>(&reply) {
         let reply_action = if reply_frame[0] == 3 {
             format!("{action}.conf")
@@ -143,7 +168,6 @@ pub(super) async fn dispatch(
             Ok(json!({"idTagInfo":{"status":"Accepted"}}))
         }
         "BootNotification" => {
-            println!("charger connected");
             let request: messages::boot_notification::BootNotificationRequest = decode(payload)?;
             let now = Utc::now().to_rfc3339();
             let model = chargers::Entity::find_by_id(charger_id)
@@ -157,16 +181,52 @@ pub(super) async fn dispatch(
                         json!({}),
                     )
                 })?;
+            let vendor_missing = model.vendor.as_deref().map_or(true, str::is_empty);
+            let model_missing = model.model.as_deref().map_or(true, str::is_empty);
+            let serial_missing = model.serial_number.is_empty();
+            let firmware_missing = model
+                .firmware_version
+                .as_deref()
+                .map_or(true, str::is_empty);
+            let serial = request.charge_point_serial_number.as_deref();
+            let mismatch =
+                model.vendor.as_deref().is_some_and(|stored| {
+                    !stored.is_empty() && stored != request.charge_point_vendor
+                }) || model.model.as_deref().is_some_and(|stored| {
+                    !stored.is_empty() && stored != request.charge_point_model
+                }) || serial.is_some_and(|reported| {
+                    !model.serial_number.is_empty() && model.serial_number != reported
+                }) || request.firmware_version.as_deref().is_some_and(|reported| {
+                    model
+                        .firmware_version
+                        .as_deref()
+                        .is_some_and(|stored| !stored.is_empty() && stored != reported)
+                });
+            if mismatch {
+                return Ok(json!({
+                    "currentTime": now,
+                    "interval": 300,
+                    "status": "Rejected"
+                }));
+            }
             let mut charger: chargers::ActiveModel = model.into();
             charger.is_online = Set(1);
-            charger.vendor = Set(Some(request.charge_point_vendor));
-            charger.model = Set(Some(request.charge_point_model));
+            if vendor_missing {
+                charger.vendor = Set(Some(request.charge_point_vendor));
+            }
+            if model_missing {
+                charger.model = Set(Some(request.charge_point_model));
+            }
             charger.last_heartbeat_at = Set(Some(now.clone()));
             if let Some(serial) = request.charge_point_serial_number {
-                charger.serial_number = Set(serial);
+                if serial_missing {
+                    charger.serial_number = Set(serial);
+                }
             }
-            if request.firmware_version.is_some() {
-                charger.firmware_version = Set(request.firmware_version);
+            if let Some(firmware) = request.firmware_version {
+                if firmware_missing {
+                    charger.firmware_version = Set(Some(firmware));
+                }
             }
             charger.last_boot_at = Set(Some(now.clone()));
             charger.updated_at = Set(now.clone());

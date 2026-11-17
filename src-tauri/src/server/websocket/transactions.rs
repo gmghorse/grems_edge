@@ -1,5 +1,5 @@
 use super::common::{db_error, CallError};
-use crate::entities::{connectors, ocpp_transactions, sessions};
+use crate::entities::{chargers, connectors, ocpp_transactions, sessions};
 use chrono::Utc;
 use rust_ocpp::v1_6::messages;
 use sea_orm::{
@@ -29,6 +29,45 @@ pub(super) async fn update_status(
         .as_str()
         .unwrap_or("NoError")
         .to_owned();
+    let connector_number = request.connector_id as i64;
+    let existing_connector = connectors::Entity::find()
+        .filter(connectors::Column::ChargerId.eq(charger_id))
+        .filter(connectors::Column::ConnectorNumber.eq(connector_number))
+        .one(db)
+        .await
+        .map_err(db_error)?;
+    if existing_connector.is_none() {
+        connectors::ActiveModel {
+            id: Set(Uuid::now_v7().to_string()),
+            charger_id: Set(charger_id.to_owned()),
+            connector_number: Set(connector_number),
+            connector_type: Set("[]".to_owned()),
+            power_kw: Set(Some(0.0)),
+            allowed_power_kw: Set(Some(22.0)),
+            status: Set(status.clone()),
+            error_code: Set(if error == "NoError" {
+                None
+            } else {
+                Some(error.clone())
+            }),
+            status_updated_at: Set(Some(now.clone())),
+        }
+        .insert(db)
+        .await
+        .map_err(db_error)?;
+        if let Some(model) = chargers::Entity::find_by_id(charger_id.to_owned())
+            .one(db)
+            .await
+            .map_err(db_error)?
+        {
+            if connector_number > model.connector_count {
+                let mut charger: chargers::ActiveModel = model.into();
+                charger.connector_count = Set(connector_number);
+                charger.updated_at = Set(now.clone());
+                charger.update(db).await.map_err(db_error)?;
+            }
+        }
+    }
     connectors::Entity::update_many()
         .col_expr(
             connectors::Column::Status,
@@ -47,7 +86,7 @@ pub(super) async fn update_status(
             sea_orm::sea_query::Expr::value(now.clone()),
         )
         .filter(connectors::Column::ChargerId.eq(charger_id))
-        .filter(connectors::Column::ConnectorNumber.eq(request.connector_id as i64))
+        .filter(connectors::Column::ConnectorNumber.eq(connector_number))
         .exec(db)
         .await
         .map_err(db_error)?;
